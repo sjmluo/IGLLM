@@ -20,7 +20,7 @@ import itertools
 
 class latent_linear_model:
 
-    def __init__(self, X, N, model, order=1, multi_channel=False, compute_partition_function=True, D_eps=0, device='cpu', n_proc=1):
+    def __init__(self, X, N, model, order=1, multi_channel=False, preprocessing_kernel='linear', compute_partition_function=True, D_eps=0, device='cpu', n_proc=1):
         """
         Parameters:
         -----------
@@ -35,6 +35,11 @@ class latent_linear_model:
             Order of the higher-order feature interaction
         multi_channel: bool
             If the image contains multiple colour channels
+        preprocessing_kernel: string
+            'linear': linear transform during the preprossing step.
+            used for positive values.
+            'exp': exponential kernel to transform the data.
+            Allows negative values.
         compute_partition_function: bool
             The model computes the partition function to
             ensure the data layer is normalized.
@@ -59,11 +64,13 @@ class latent_linear_model:
         self.model = model.lower()
         self.order = order
         self.multi_channel = multi_channel
+        self.preprocessing_kernel = preprocessing_kernel
         self.compute_partition_function = compute_partition_function
         self.D_eps = D_eps
         self.device = device
         self.n_proc = n_proc
         self.psi = 0
+
 
         # Pre-process X
         self.X = np.array(X)
@@ -110,8 +117,20 @@ class latent_linear_model:
         --------
         None
         """
-        self.Z = np.sum(self.X)
-        self.X /= self.Z
+        if self.preprocessing_kernel == 'linear':
+            self.Z = np.sum(self.X)
+            self.X /= self.Z
+        elif self.preprocessing_kernel == 'exp':
+            exp_X = np.exp(self.X)
+            self.Z = np.sum(exp_X)
+            self.X = exp_X / self.Z
+        elif self.preprocessing_kernel == 'minmax':
+            self.X -= np.min(self.X) - 1e-1
+            self.X /= np.max(self.X)
+            self.Z = np.sum(self.X)
+            self.X /= self.Z
+        else:
+            raise("Please input 'linear' or 'exp' for the preprocessing_kernel.")
 
     def _flatten_X_dictionary_learning(self):
         """
@@ -1037,7 +1056,7 @@ class latent_linear_model:
             if store_values:
                 self._store_values(RMSE_reconstruction_error, run_time)
 
-            if (not (save_at_tol is None)) and (save_idx < len(save_at_tol)):
+            if (not (save_at_tol[0] is None)) and (save_idx < len(save_at_tol)):
                 while (save_idx < len(save_at_tol)):
                     if (save_at_tol[save_idx] > error):
                         tol_save_path = '{}/tol{:.0e}/'.format(save_path, save_at_tol[save_idx])
